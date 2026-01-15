@@ -133,12 +133,16 @@ class YouTubeService:
     
     def __init__(self, api_key: str):
         self.youtube = build('youtube', 'v3', developerKey=api_key)
-        self.transcript_api = YouTubeTranscriptApi(
-            proxy_config=WebshareProxyConfig(
-                proxy_username=os.getenv('WEBSHARE_USERNAME'),
-                proxy_password=os.getenv('WEBSHARE_PASSWORD'),
+        if os.getenv('DEVELOPMENT_MODE')=='true':
+            self.transcript_api = YouTubeTranscriptApi()
+        else:
+            self.transcript_api = YouTubeTranscriptApi(
+                proxy_config=WebshareProxyConfig(
+                    proxy_username=os.getenv('WEBSHARE_USERNAME'),
+                    proxy_password=os.getenv('WEBSHARE_PASSWORD'),
+                )
             )
-        )
+
     
     def _retry_api_call(self, func, *args, **kwargs):
         """Helper to retry API calls on failure"""
