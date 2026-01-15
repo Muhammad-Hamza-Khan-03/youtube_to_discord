@@ -14,6 +14,7 @@ from youtube_transcript_api.proxies import WebshareProxyConfig
 from googleapiclient.discovery import build
 from groq import Groq
 from discordwebhook import Discord
+from google import genai
 
 # Configure logging
 logging.basicConfig(
@@ -45,7 +46,7 @@ class Config:
         self.youtube_api_key = os.getenv('YOUTUBE_API_KEY')
         self.groq_api_key = os.getenv('GROQ_API_KEY')
         self.discord_webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
-        
+        self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         self.data_dir = Path('data')
         self.data_csv = self.data_dir / 'data.csv'
         self.channel_ids_file = Path('channel_ids.txt')
@@ -58,6 +59,8 @@ class Config:
             raise ValueError("YOUTUBE_API_KEY environment variable not set")
         if not self.groq_api_key:
             raise ValueError("GROQ_API_KEY environment variable not set")
+        if not self.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY environment variable not set")
         if not self.discord_webhook_url:
             raise ValueError("DISCORD_WEBHOOK_URL environment variable not set")
         if not self.channel_ids_file.exists():
@@ -224,14 +227,15 @@ class YouTubeService:
 class SummaryGenerator:
     """Generate summaries using Groq API"""
     
-    def __init__(self, api_key: str):
-        self.client = Groq(api_key=api_key)
-        self.model = "llama-3.3-70b-versatile"
+    def __init__(self, groq_api_key: str, gemini_api_key: str):
+        self.groq_client = Groq(api_key=groq_api_key)
+        self.gemini_client = genai.Client(api_key=gemini_api_key)
+        self.groq_model = os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile"
+        self.gemini_model = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash-preview-09-2025"
     
     def generate_summary(self, transcript: str, video_title: str) -> Optional[str]:
         """Generate detailed summary with keywords from transcript"""
-        try:
-            prompt = f"""
+        prompt = f"""
 You are a professional content summarizer. Given the following video transcript, create a detailed summary that:
 
 1. Highlights all important points and key takeaways
@@ -246,9 +250,10 @@ Transcript:
 
 Please provide a comprehensive summary that captures the essence of the content while making it engaging and informative.
 """
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
+        try:
+            logger.info(f"Attempting to generate summary with Groq for: {video_title}")
+            response = self.groq_client.chat.completions.create(
+                model=self.groq_model,
                 messages=[
                     {"role": "system", "content": "You are an expert content summarizer who creates engaging, professional summaries."},
                     {"role": "user", "content": prompt}
@@ -256,14 +261,27 @@ Please provide a comprehensive summary that captures the essence of the content 
                 temperature=0.7,
                 max_tokens=2000
             )
-            
             summary = response.choices[0].message.content
-            logger.info(f"Successfully generated summary for video: {video_title}")
+            logger.info(f"Successfully generated summary with Groq for video: {video_title}")
             return summary
-            
-        except Exception as e:
-            logger.error(f"Error generating summary: {e}")
-            return None
+        except Exception as groq_err:
+            logger.warning(f"Groq summary generation failed for {video_title}, falling back to Gemini: {groq_err}")
+            try:
+                response = self.gemini_client.models.generate_content(
+                    model=self.gemini_model,
+                    contents=[prompt],
+                    config={
+                        "temperature": 0.7,
+                        "max_output_tokens": 2000,
+                        "system_instruction": "You are an expert content summarizer who creates engaging, professional summaries."
+                    }
+                )
+                summary = response.text
+                logger.info(f"Successfully generated summary with Gemini fallback for video: {video_title}")
+                return summary
+            except Exception as gemini_err:
+                logger.error(f"Gemini fallback also failed for {video_title}: {gemini_err}")
+                return None
 
 
 class DiscordNotifier:
@@ -271,7 +289,12 @@ class DiscordNotifier:
     
     def __init__(self, webhook_url: str):
         self.discord = Discord(url=webhook_url)
-    
+
+    def send_initial_message(self):
+        message = f"🚀 **Starting YouTube Transcript Processing for Today: {datetime.now().strftime('%Y-%m-%d')}**"
+        self.discord.post(content=message)
+        logger.info("Initial message sent to Discord")
+
     def send_summary(self, video_data: VideoData) -> bool:
         """Send video summary to Discord"""
         try:
@@ -318,7 +341,7 @@ class TranscriptProcessor:
         self.config = config
         self.data_manager = DataManager(config.data_csv)
         self.youtube_service = YouTubeService(config.youtube_api_key)
-        self.summary_generator = SummaryGenerator(config.groq_api_key)
+        self.summary_generator = SummaryGenerator(config.groq_api_key, config.gemini_api_key)
         self.discord_notifier = DiscordNotifier(config.discord_webhook_url)
     
     def load_channel_ids(self) -> List[str]:
@@ -372,6 +395,9 @@ class TranscriptProcessor:
         self.discord_notifier.send_summary(video_data)
         
         return True
+    
+    def initial_message_for_first_run_of_day(self):
+        self.discord_notifier.send_initial_message()
     
     def run(self):
         """Main execution flow"""
@@ -433,6 +459,7 @@ def main():
         
         # Create and run processor
         processor = TranscriptProcessor(config)
+        processor.initial_message_for_first_run_of_day()
         processor.run()
         
     except Exception as e:
