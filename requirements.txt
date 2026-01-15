@@ -1,0 +1,6 @@
+polars
+youtube-transcript-api
+google-api-python-client
+groq
+discordwebhook
+python-dotenv
