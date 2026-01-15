@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 import polars as pl
 from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api.proxies import WebshareProxyConfig
 from googleapiclient.discovery import build
 from groq import Groq
 from discordwebhook import Discord
@@ -129,7 +130,12 @@ class YouTubeService:
     
     def __init__(self, api_key: str):
         self.youtube = build('youtube', 'v3', developerKey=api_key)
-        self.transcript_api = YouTubeTranscriptApi()
+        self.transcript_api = YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=os.getenv('WEBSHARE_USERNAME'),
+                proxy_password=os.getenv('WEBSHARE_PASSWORD'),
+            )
+        )
     
     def _retry_api_call(self, func, *args, **kwargs):
         """Helper to retry API calls on failure"""
