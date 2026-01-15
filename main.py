@@ -171,7 +171,7 @@ class YouTubeService:
         """Fetch videos uploaded in the last N hours from a channel"""
         try:
             # Calculate time threshold
-            published_after = (datetime.utcnow() - timedelta(hours=hours)).isoformat() + 'Z'
+            published_after = (datetime.now() - timedelta(hours=hours)).isoformat() + 'Z'
             
             response = self._retry_api_call(
                 self.youtube.search().list,
