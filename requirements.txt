@@ -5,3 +5,14 @@ groq
 discordwebhook
 python-dotenv
 google-genai
+spacy
+langgraph
+pydantic
+pydantic-settings
+tenacity
+python-json-logger
+tiktoken
+sqlmodel
+httpx
+pytest
+prometheus_client

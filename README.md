@@ -1,44 +1,39 @@
-# YouTube to Discord Transcript Processor
+# YouTube to Discord Pipeline
 
-A robust Python-based tool that monitors YouTube channels, extracts transcripts, generates AI-powered summaries, and sends notifications to Discord.
+A hardened production-grade pipeline that extracts research-quality insights from YouTube transcripts and drafts creative LinkedIn posts.
 
-## 🛠 Tech & Tools
+## 🛠 Tech Stack
+- **Engine**: Python 3.12+, LangGraph
+- **LLMs**: Groq (Primary: Llama-3.3-70B), Gemini (Fallback: 2.0-Flash)
+- **Storage**: SQLite (SQLModel)
+- **Metrics**: Prometheus
 
-- **Core**: Python 3.12+
-- **AI Models**: 
-  - **Groq** (Primary): Llama 3.3 70B for fast, high-quality summaries.
-  - **Google Gemini** (Fallback): Gemini 2.5 Flash for reliable redundancy.
-- **Data Processing**: **Polars** for efficient CSV-based data management.
-- **APIs**:
-  - **YouTube Data API v3**: For fetching latest channel videos.
-  - **YouTube Transcript API**: For extracting video subtitles.
-  - **Discord Webhooks**: For automated notifications.
-- **Utilities**: `python-dotenv`, `google-api-python-client`, `google-genai`.
+## 🚀 Setup
 
-## 🚀 Setup Instructions
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   python -m spacy download en_core_web_sm
+   ```
 
-### 1. Clone & Install
-```bash
-git clone https://github.com/Muhammad-Hamza-Khan-03/youtube_to_discord.git
-cd youtube_to_discord
+2. **Configure**:
+   - Copy `.env.example` to `.env` and add your API keys.
+   - List YouTube channel IDs in `channel_ids.txt`.
 
-# setup the environment
-chmod +x setup.sh
-./setup.sh
-```
+3. **Pre-flight Check**:
+   ```bash
+   python health_check.py
+   ```
 
-### 2. Add Channel IDs and Env variables
-Add the YouTube Channel IDs you want to monitor to `channel_ids.txt` (one per line) and the environment variables to `.env` file.
+4. **Run**:
+   ```bash
+   python main.py
+   # Test without side effects
+   python main.py --dry-run
+   ```
 
-### 3. Run the Script
-```bash
-source .venv/bin/activate
-python main.py
-```
-
-## 📝 How it Works
-1. **Fetch**: Checks `channel_ids.txt` for new videos uploaded in the last 24 hours.
-2. **Filter**: Skips videos already present in `data/data.csv`.
-3. **Extract**: Retrieves the transcript using `youtube-transcript-api`.
-4. **Summarize**: Attempts to generate a summary using Groq; falls back to Gemini if Groq fails.
-5. **Notify**: Sends the formatted summary and metadata to your Discord channel.
+## 🧪 Development
+- **health-check**: `python health_check.py`
+- **Tests**: `pytest tests/`
+- **Logs**: Structured JSON logs in `script.log`.
+- **Database**: `data/insights.db`.
