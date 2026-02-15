@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     discord_webhook_url: str = Field(..., alias="DISCORD_WEBHOOK_URL")
     
     # Model Config
-    groq_model: str = "llama-3.3-70b-versatile"
-    gemini_model: str = "gemini-2.0-flash"
+    groq_model: str = Field("llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    gemini_model: str = Field("gemini-2.0-flash", alias="GEMINI_MODEL")
     
     # Proxy Config (Optional)
     webshare_username: str = Field(None, alias="WEBSHARE_USERNAME")
     webshare_password: str = Field(None, alias="WEBSHARE_PASSWORD")
-    development_mode: bool = Field(False, alias="DEVELOPMENT_MODE")
+    development_mode: bool = False
     
     # Paths
     data_dir: Path = Path("data")
@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2000
     llm_retry_attempts: int = 3
     
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_file_encoding='utf-8')
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"          # don't crash on missing .env in CI
+    )
 
 settings = Settings()

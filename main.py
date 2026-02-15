@@ -382,26 +382,45 @@ class YouTubeService:
 
     def get_latest_videos(self, channel_id: str, hours: int = 24) -> List[Dict]:
         try:
-            published_after = (datetime.now() - timedelta(hours=hours)).isoformat() + 'Z'
-            request = self.youtube.search().list(
-                part='snippet',
-                channelId=channel_id,
-                publishedAfter=published_after,
-                order='date',
-                type='video',
-                maxResults=settings.max_youtube_results
+            # Step 1: Get the uploads playlist ID (1 unit)
+            channel_response = self.youtube.channels().list(
+                part='contentDetails',
+                id=channel_id
+            ).execute()
+        
+            uploads_playlist_id = (
+                channel_response['items'][0]['contentDetails']
+                ['relatedPlaylists']['uploads']
             )
-            response = request.execute()
+
+            # Step 2: Get latest videos from uploads playlist (1 unit)
+            playlist_response = self.youtube.playlistItems().list(
+                part='snippet',
+                playlistId=uploads_playlist_id,
+                maxResults=10  # reduce from 50, you only need recent ones
+            ).execute()
+
+            cutoff = datetime.now(UTC) - timedelta(hours=hours)
             videos = []
-            for item in response.get('items', []):
-                title = html.unescape(item['snippet']['title'])
+
+            for item in playlist_response.get('items', []):
+                snippet = item['snippet']
+                published_at = datetime.fromisoformat(
+                    snippet['publishedAt'].replace('Z', '+00:00')
+                )
+                if published_at < cutoff:
+                    continue  # too old, skip
+                
+                title = html.unescape(snippet['title'])
                 videos.append({
-                    'video_id': item['id']['videoId'],
+                    'video_id': snippet['resourceId']['videoId'],
                     'title': title,
-                    'channel_name': item['snippet']['channelTitle'],
+                    'channel_name': snippet['channelTitle'],
                     'channel_id': channel_id
                 })
+
             return videos
+
         except Exception as e:
             logger.error(f"Error fetching videos for channel {channel_id}", exc_info=True)
             raise e
@@ -474,7 +493,10 @@ class InsightWorkflow:
         user_message = f"Evaluate these insights: {state['insights'].model_dump_json()}"
         
         try:
-            state["scores"] = self.llm.call_llm(scoring_prompt, user_message, InsightScores)
+            scores = self.llm.call_llm(scoring_prompt, user_message, InsightScores)
+            state["scores"] = scores
+            if scores.reject_reason:
+                state["reject_reason"] = scores.reject_reason
             NODE_EXECUTION_COUNT.labels(node_name=node_name, status="success").inc()
         except LLMParseError:
             state["reject_reason"] = "Scoring Parse Error"
@@ -525,7 +547,16 @@ class InsightWorkflow:
 
     def _handle_rejection(self, state: WorkflowState) -> WorkflowState:
         state["approved_for_post"] = False
-        if not state.get("processed_at"): state["processed_at"] = datetime.now().isoformat()
+        if not state.get("reject_reason"):
+            if state.get("scores") and state["scores"].reject_reason:
+                state["reject_reason"] = state["scores"].reject_reason
+            elif state.get("rejection_stage") == "bucket_filter":
+                state["reject_reason"] = "Filtered by topic bucket or signal"
+            else:
+                state["reject_reason"] = "Low quality score (below threshold)"
+        
+        if not state.get("processed_at"): 
+            state["processed_at"] = datetime.now().isoformat()
         return state
 
     def _build_graph(self):
@@ -587,6 +618,13 @@ class InsightWorkflow:
 class DiscordNotifier:
     def __init__(self, webhook_url: str):
         self.discord = Discord(url=webhook_url)
+
+    def send_status(self, message: str):
+        """Send a simple status message"""
+        try:
+            self.discord.post(content=message)
+        except Exception:
+            logger.error("Failed to send Discord status message", exc_info=True)
 
     def send_update(self, result: dict):
         try:
@@ -715,6 +753,9 @@ class TranscriptProcessor:
         logger.info(f"Starting Transcript Processing Workflow v{__version__}")
         if self.dry_run:
             logger.info("DRY RUN MODE ENABLED - No writes or notifications will be sent.")
+        else:
+            pipeline_starting_message = "🚀 **Pipeline Execution Started on** " + datetime.now(UTC).strftime("%A")
+            self.notifier.send_status(pipeline_starting_message)
         
         try:
             with open(settings.channel_ids_file, 'r') as f:
@@ -769,14 +810,30 @@ class TranscriptProcessor:
         logger.info(f"Batch complete. Found {total_found}, processed {total_processed}, passed {total_passed}, rejected {total_rejected}")
         
         # Send summary to Discord
-        if not self.dry_run and total_processed > 0:
-            self.notifier.send_summary(total_processed, total_rejected, total_passed)
+        if not self.dry_run:
+            if total_processed > 0:
+                self.notifier.send_summary(total_processed, total_rejected, total_passed)
+            self.notifier.send_status("🏁 **Pipeline Execution Finished**")
+
 
 async def main():
     import argparse
     parser = argparse.ArgumentParser(description="YouTube to Discord Insight Pipeline")
     parser.add_argument("--dry-run", action="store_true", help="Run pipeline without writing to DB or Discord")
+    parser.add_argument("--reset-circuits", action="store_true", help="Reset all channel circuit breakers")
     args = parser.parse_args()
+
+    if args.reset_circuits:
+        logger.info("Resetting all circuit breakers...")
+        engine = create_engine(f"sqlite:///{settings.db_path}")
+        with Session(engine) as session:
+            audits = session.exec(select(ChannelAudit)).all()
+            for audit in audits:
+                audit.is_circuit_broken = False
+                audit.consecutive_errors = 0
+                session.add(audit)
+            session.commit()
+            logger.info(f"Reset {len(audits)} channels.")
 
     try:
         processor = TranscriptProcessor(dry_run=args.dry_run)

@@ -1,0 +1,84 @@
+name: YouTube Insight Pipeline
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # every 6 hours
+  workflow_dispatch:        # manual trigger
+    inputs:
+      dry_run:
+        description: 'Dry run (no writes or Discord)'
+        type: boolean
+        default: false
+      reset_circuits:
+        description: 'Reset all circuit breakers'
+        type: boolean
+        default: false
+
+jobs:
+  run_pipeline:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write  # needed to push DB back to repo
+
+    steps:
+      - name: Checkout repo (including DB)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Run pipeline
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
+          WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ github.event.inputs.reset_circuits }}" = "true" ]; then ARGS="$ARGS --reset-circuits"; fi
+          python main.py $ARGS
+
+      - name: Commit updated DB back to repo
+        if: ${{ github.event.inputs.dry_run != 'true' }}  # skip commit on dry runs
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/insights.db
+          # Also track data.csv if it's still being updated, but for now we focus on the DB
+          git diff --staged --quiet || git commit -m "chore: update pipeline DB [skip ci]"
+          git push
+
+  cleanup_old_records:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'  # only on scheduled runs
+    needs: run_pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prune records older than 90 days
+        run: python scripts/prune_db.py --days 90
+      - name: Commit pruned DB back to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/insights.db
+          git diff --staged --quiet || git commit -m "chore: prune pipeline DB [skip ci]"
+          git push

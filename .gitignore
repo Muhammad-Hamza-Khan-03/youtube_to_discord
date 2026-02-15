@@ -152,4 +152,6 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+data/*
+!data/insights.db
 data/o_data.csv

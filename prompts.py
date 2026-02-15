@@ -156,7 +156,7 @@ SCORING RULES
 ══════════════════════════════════════════
 OUTPUT FORMAT
 ══════════════════════════════════════════
-Think step by step in "reasoning" before assigning scores.
+Return valid JSON. Think step by step in "reasoning" before assigning scores.
 
 {
   "reasoning": "...",
@@ -241,6 +241,8 @@ HARD CONSTRAINTS
 ══════════════════════════════════════════
 OUTPUT FORMAT
 ══════════════════════════════════════════
+Return valid JSON.
+
 {
   "post_content": "..."
 }
