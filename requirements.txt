@@ -16,3 +16,4 @@ sqlmodel
 httpx
 pytest
 prometheus_client
+sqlmodel
