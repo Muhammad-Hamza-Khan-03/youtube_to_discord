@@ -1,6 +1,12 @@
 # YouTube to Discord Pipeline
 
-A hardened production-grade pipeline that extracts research-quality insights from YouTube transcripts and drafts creative LinkedIn posts.
+A LangGraph automation project that extracts insights from YouTube transcripts and prepares draft content for Discord delivery. The project is in development; its repository documents setup, dry-run checks, persistence, and monitoring integrations.
+
+[Portfolio case study](https://hamza-khan-portfolio.hamzakhan102003.chatgpt.site/projects/youtube-discord/) · [LinkedIn](https://www.linkedin.com/in/muhammadhamzakhan/)
+
+## Workflow and scope
+
+The workflow connects transcript extraction, insight selection, structured content preparation, persistence, and Discord integration. The setup below includes a dry-run option for checking the pipeline without delivery side effects. No delivery-volume or latency benchmark is claimed.
 
 ## 🛠 Tech Stack
 - **Engine**: Python 3.12+, LangGraph
